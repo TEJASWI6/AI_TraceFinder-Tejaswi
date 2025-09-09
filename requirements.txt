@@ -5,3 +5,4 @@ scikit-image
 joblib
 pandas
 pdf2image
+scikit-learn==1.6.1
