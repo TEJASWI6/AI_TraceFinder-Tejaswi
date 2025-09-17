@@ -14,8 +14,6 @@ from skimage.feature import local_binary_pattern
 st.set_page_config(layout="wide")
 
 # --- CONFIGURATION ---
-# ✅ NOTE: I've updated your filenames to match the V2 models we retrained.
-# Make sure your files are named this way in your folder.
 MODEL_PATH = 'baseline_model_v2.joblib'
 ENCODER_PATH = 'baseline_label_encoder_v2.joblib'
 LOG_FILE = 'prediction_log.csv'
@@ -53,12 +51,13 @@ def load_model():
 model, le = load_model()
 
 # --- Logging Function ---
-def log_prediction(filename, prediction, confidence):
+def log_prediction(filename, prediction, confidence, auth_status): # Added auth_status
     new_log = pd.DataFrame({
         'Timestamp': [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
         'Filename': [filename],
         'Prediction': [prediction],
-        'Confidence': [f"{confidence:.2f}%"]
+        'Confidence': [f"{confidence:.2f}%"],
+        'Status': [auth_status] # Added Status to log
     })
     
     if os.path.exists(LOG_FILE):
@@ -82,7 +81,7 @@ with col1:
     st.header("Upload Document")
     uploaded_file = st.file_uploader("Choose a file...", type=["png", "jpg", "jpeg", "tif", "tiff", "pdf"])
 
-# ✅ RESTRUCTURED LOGIC: All processing happens first, then we draw everything.
+# RESTRUCTURED LOGIC: All processing happens first, then we draw everything.
 if uploaded_file is not None and model is not None:
     # --- 1. Process the uploaded file ---
     image_to_process = None
@@ -109,8 +108,17 @@ if uploaded_file is not None and model is not None:
             prediction_label = le.inverse_transform(prediction_idx)[0]
             confidence = prediction_proba[0][prediction_idx[0]] * 100
             
-            # This happens immediately now
-            log_prediction(uploaded_file.name, prediction_label, confidence)
+            # ✅ NEW: Determine the authenticity status based on the prediction
+            authentic_labels = ['Original', 'HP', 'Canon120-1', 'Canon220', 'Canon9000-1', 'EpsonV370-1', 'EpsonV39-1', 'EpsonV550']
+            if prediction_label in authentic_labels:
+                auth_status = "Authentic Scan"
+                auth_color = "green"
+            else:
+                auth_status = "Non-Authentic Scan"
+                auth_color = "red"
+            
+            # This happens immediately now (and logs the new status)
+            log_prediction(uploaded_file.name, prediction_label, confidence, auth_status)
             st.toast("Prediction logged!")
 
             # --- 3. Draw the results on the main page ---
@@ -118,7 +126,11 @@ if uploaded_file is not None and model is not None:
                 st.image(image_to_process, caption="Image being analyzed.", use_column_width=True)
             with col2:
                 st.header("Analysis Result")
-                st.success(f"**Prediction:** {prediction_label}")
+
+                # ✅ NEW: Display the authenticity status
+                st.markdown(f"### Status: <span style='color:{auth_color};'>{auth_status}</span>", unsafe_allow_html=True)
+                
+                st.info(f"**Predicted Class:** {prediction_label}")
                 st.info(f"**Confidence:** {confidence:.2f}%")
                 
                 result_csv = f"Filename,Prediction,Confidence\n{uploaded_file.name},{prediction_label},{confidence:.2f}"
