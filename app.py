@@ -14,6 +14,8 @@ from skimage.feature import local_binary_pattern
 st.set_page_config(layout="wide")
 
 # --- CONFIGURATION ---
+# ✅ NOTE: I've updated your filenames to match the V2 models we retrained.
+# Make sure your files are named this way in your folder.
 MODEL_PATH = 'baseline_model_v2.joblib'
 ENCODER_PATH = 'baseline_label_encoder_v2.joblib'
 LOG_FILE = 'prediction_log.csv'
@@ -72,7 +74,70 @@ def log_prediction(filename, prediction, confidence):
 st.title("TraceFinder: Forensic Scanner Identification 🕵️‍♂️")
 st.write("Upload a scanned document (Image or PDF) to identify its source or determine if it's an original/tampered file.")
 
-# --- Sidebar for Logs ---
+# --- Define the layout columns first ---
+col1, col2 = st.columns(2)
+
+# Place the file uploader in the first column
+with col1:
+    st.header("Upload Document")
+    uploaded_file = st.file_uploader("Choose a file...", type=["png", "jpg", "jpeg", "tif", "tiff", "pdf"])
+
+# ✅ RESTRUCTURED LOGIC: All processing happens first, then we draw everything.
+if uploaded_file is not None and model is not None:
+    # --- 1. Process the uploaded file ---
+    image_to_process = None
+    if uploaded_file.type == "application/pdf":
+        try:
+            images = convert_from_bytes(uploaded_file.getvalue(), first_page=1, last_page=1)
+            if images:
+                image_to_process = images[0]
+        except Exception as e:
+            st.error(f"Error converting PDF: {e}")
+    else:
+        image_to_process = Image.open(uploaded_file)
+
+    # --- 2. Predict and Log the result ---
+    if image_to_process is not None:
+        img_cv = np.array(image_to_process.convert('RGB'))
+        img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
+        features = extract_lbp_features(img_cv)
+
+        if features is not None:
+            features = features.reshape(1, -1)
+            prediction_idx = model.predict(features)
+            prediction_proba = model.predict_proba(features)
+            prediction_label = le.inverse_transform(prediction_idx)[0]
+            confidence = prediction_proba[0][prediction_idx[0]] * 100
+            
+            # This happens immediately now
+            log_prediction(uploaded_file.name, prediction_label, confidence)
+            st.toast("Prediction logged!")
+
+            # --- 3. Draw the results on the main page ---
+            with col1:
+                st.image(image_to_process, caption="Image being analyzed.", use_column_width=True)
+            with col2:
+                st.header("Analysis Result")
+                st.success(f"**Prediction:** {prediction_label}")
+                st.info(f"**Confidence:** {confidence:.2f}%")
+                
+                result_csv = f"Filename,Prediction,Confidence\n{uploaded_file.name},{prediction_label},{confidence:.2f}"
+                st.download_button(
+                    label="Download Current Result (.csv)",
+                    data=result_csv,
+                    file_name=f"result_{uploaded_file.name}.csv",
+                    mime='text/csv',
+                )
+                
+                st.write("### All Class Probabilities")
+                proba_dict = {le.classes_[i]: prediction_proba[0][i] * 100 for i in range(len(le.classes_))}
+                st.dataframe(
+                    [proba_dict],
+                    column_config={k: st.column_config.ProgressColumn(f"{k}", min_value=0, max_value=100, format="%.2f%%") for k in proba_dict},
+                    hide_index=True
+                )
+
+# --- 4. Draw the sidebar at the end ---
 st.sidebar.title("History")
 st.sidebar.write("View and download the complete prediction log.")
 if os.path.exists(LOG_FILE):
@@ -85,66 +150,10 @@ if os.path.exists(LOG_FILE):
         mime='text/csv'
     )
 else:
+    # This will only show when the app first starts
     st.sidebar.info("No predictions have been logged yet.")
 
-
-# --- Main Page Layout ---
-col1, col2 = st.columns(2)
-
-with col1:
-    st.header("Upload Document")
-    uploaded_file = st.file_uploader("Choose a file...", type=["png", "jpg", "jpeg", "tif", "tiff", "pdf"])
-
-if uploaded_file is not None and model is not None:
-    image_to_process = None
-    if uploaded_file.type == "application/pdf":
-        try:
-            images = convert_from_bytes(uploaded_file.getvalue(), first_page=1, last_page=1)
-            if images:
-                image_to_process = images[0]
-        except Exception as e:
-            st.error(f"Error converting PDF: {e}")
-    else:
-        image_to_process = Image.open(uploaded_file)
-
-    if image_to_process is not None:
-        with col1:
-            st.image(image_to_process, caption="Image being analyzed.", use_column_width=True)
-        with col2:
-            st.header("Analysis Result")
-            with st.spinner("Analyzing the document..."):
-                img_cv = np.array(image_to_process.convert('RGB'))
-                img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
-                features = extract_lbp_features(img_cv)
-
-                if features is not None:
-                    features = features.reshape(1, -1)
-                    prediction_idx = model.predict(features)
-                    prediction_proba = model.predict_proba(features)
-                    prediction_label = le.inverse_transform(prediction_idx)[0]
-                    confidence = prediction_proba[0][prediction_idx[0]] * 100
-
-                    st.success(f"**Prediction:** {prediction_label}")
-                    st.info(f"**Confidence:** {confidence:.2f}%")
-
-                    log_prediction(uploaded_file.name, prediction_label, confidence)
-                    st.toast("Prediction logged!")
-
-                    result_csv = f"Filename,Prediction,Confidence\n{uploaded_file.name},{prediction_label},{confidence:.2f}"
-                    st.download_button(
-                        label="Download Current Result (.csv)",
-                        data=result_csv,
-                        file_name=f"result_{uploaded_file.name}.csv",
-                        mime='text/csv',
-                    )
-                    
-                    st.write("### All Class Probabilities")
-                    proba_dict = {le.classes_[i]: prediction_proba[0][i] * 100 for i in range(len(le.classes_))}
-                    st.dataframe(
-                        [proba_dict],
-                        column_config={k: st.column_config.ProgressColumn(f"{k}", min_value=0, max_value=100, format="%.2f%%") for k in proba_dict},
-                        hide_index=True
-                    )
-else:
+# This message now only shows on first load
+if uploaded_file is None:
     with col2:
         st.info("Please upload a document to begin the analysis.")
