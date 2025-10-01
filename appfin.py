@@ -14,8 +14,8 @@ from skimage.feature import local_binary_pattern
 st.set_page_config(layout="wide", page_title="TraceFinder")
 
 # --- CONFIGURATION ---
-MODEL_PATH = 'Baseline_model_v2.joblib'
-ENCODER_PATH = 'Baseline_label_encoder_v2.joblib'
+MODEL_PATH = 'Baseline_model_v21.joblib'
+ENCODER_PATH = 'Baseline_label_encoder_v21.joblib'
 LOG_FILE = 'prediction_log.csv'
 IMG_SIZE = 256
 
